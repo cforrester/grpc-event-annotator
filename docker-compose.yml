@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+
+  mongo:
+    image: mongo:5.0.15
+    container_name: mongo
+    ports:
+      - "27017:27017"
+
+  grpc-server:
+    build: .
+    container_name: grpc-server
+    depends_on:
+      - mongo
+    environment:
+      # so GrpcServer reads the right URI
+      MONGO_URI: "mongodb://mongo:27017"
+    ports:
+      - "50051:50051"

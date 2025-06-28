@@ -1,0 +1,12 @@
+/home/admin/grpc-event-annotator/src/main/java/service/GrpcServer.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/InteractionRequestOrBuilder.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/AnnotationOrBuilder.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/InteractionResponseOrBuilder.java
+/home/admin/grpc-event-annotator/src/main/java/service/InteractionServiceImpl.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/InteractionResponse.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/grpc-java/interaction/InteractionServiceGrpc.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/Interaction.java
+/home/admin/grpc-event-annotator/src/main/java/client/GrpcClient.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/Annotation.java
+/home/admin/grpc-event-annotator/target/generated-sources/protobuf/java/interaction/InteractionRequest.java
+/home/admin/grpc-event-annotator/src/main/java/client/StreamClient.java
