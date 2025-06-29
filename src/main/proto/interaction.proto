@@ -22,10 +22,16 @@ message InteractionResponse {
 }
 
 service InteractionService {
+  // simple unary RPC
   rpc AnnotateInteraction (InteractionRequest) returns (InteractionResponse);
+  
   // client-streaming RPC
   rpc StreamAnnotateInteractions (stream InteractionRequest) 
     returns (InteractionResponse);
+  
+  // Bidirectional-streaming RPC
+  rpc ChatAnnotate(stream InteractionRequest) returns (stream InteractionResponse);
+
 }
 
 

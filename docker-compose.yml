@@ -6,14 +6,32 @@ services:
     container_name: mongo
     ports:
       - "27017:27017"
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management UI
+
 
   grpc-server:
     build: .
     container_name: grpc-server
     depends_on:
       - mongo
+      - rabbitmq
     environment:
       # so GrpcServer reads the right URI
       MONGO_URI: "mongodb://mongo:27017"
+      RABBITMQ_URI: "amqp://rabbitmq:5672"    
     ports:
       - "50051:50051"
+      
+  annotator:
+    build: .
+    depends_on:
+      - mongo
+      - rabbitmq
+    environment:
+      MONGO_URI: "mongodb://mongo:27017"
+      RABBITMQ_URI: "amqp://rabbitmq:5672"
+    command: ["java","-cp","app.jar","service.AsyncAnnotator"]

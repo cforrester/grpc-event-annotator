@@ -4,6 +4,12 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import java.security.NoSuchAlgorithmException;
+import java.security.KeyManagementException;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.util.concurrent.TimeoutException;
+import com.rabbitmq.client.*;
 import interaction.*;
 import com.google.protobuf.Timestamp;
 import io.grpc.stub.StreamObserver;
@@ -15,11 +21,28 @@ import java.util.List;
 public class InteractionServiceImpl 
     extends InteractionServiceGrpc.InteractionServiceImplBase {
 
+    String rabbitUri = System.getenv("RABBITMQ_URI");
     private final MongoCollection<Document> coll;
+    private final Channel rabbitChannel;
+
     public InteractionServiceImpl(MongoClient client) {
         MongoDatabase db = client.getDatabase("events_db");
         coll = db.getCollection("interactions");
-
+        Channel channel;
+        try {
+            ConnectionFactory cf = new ConnectionFactory();
+            cf.setUri(rabbitUri);                  
+            Connection conn = cf.newConnection();  
+            channel = conn.createChannel();
+            channel.queueDeclare("interaction_requests", true, false, false, null);
+        } catch (URISyntaxException
+               | IOException
+               | TimeoutException
+               | NoSuchAlgorithmException
+               | KeyManagementException e) {
+            throw new RuntimeException("Failed to initialize RabbitMQ", e);
+        }
+        rabbitChannel = channel;
     }
 
 
@@ -60,40 +83,54 @@ public class InteractionServiceImpl
         };
     }
 
+
+
+    @Override
+    public StreamObserver<InteractionRequest> chatAnnotate(
+        StreamObserver<InteractionResponse> responseObserver) {
+
+        return new StreamObserver<InteractionRequest>() {
+            @Override
+            public void onNext(InteractionRequest req) {
+            // For each incoming request, immediately send back an annotation response:
+            InteractionResponse resp = InteractionResponse.newBuilder()
+                .addAnnotations(Annotation.newBuilder()
+                    .setKey("echo_user")
+                    .setValue(req.getUserId())
+                    .build())
+                .addAnnotations(Annotation.newBuilder()
+                    .setKey("echo_payload")
+                    .setValue(req.getPayload())
+                    .build())
+                .build();
+            responseObserver.onNext(resp);
+            }
+
+            @Override
+            public void onError(Throwable t) {
+            // Propagate errors to the client
+            responseObserver.onError(t);
+            }
+
+            @Override
+            public void onCompleted() {
+            // Client has finished sending—close the response stream
+            responseObserver.onCompleted();
+            }
+        };
+    }
+
+
     @Override
     public void annotateInteraction(InteractionRequest req,
-                                    StreamObserver<InteractionResponse> respObserver) {
-        String userId = req.getUserId();
-        String payload = req.getPayload();
-        Timestamp receivedAt = req.getReceivedAt();
-
-        // Build the Response
-        InteractionResponse.Builder respB = InteractionResponse.newBuilder()
-            .addAnnotations(Annotation.newBuilder()
-                .setKey("length")
-                .setValue(String.valueOf(payload.length()))
-                .build())
-            .addAnnotations(Annotation.newBuilder()
-                .setKey("received_epoch")
-                .setValue(String.valueOf(receivedAt.getSeconds()))
-                .build());
-
-        InteractionResponse response = respB.build();
-
-        // --- NEW: persist to MongoDB ---
-        List<Document> annDocs = new ArrayList<>();
-        for (Annotation a : response.getAnnotationsList()) {
-            annDocs.add(new Document("key", a.getKey())
-                              .append("value", a.getValue()));
+                                    StreamObserver<InteractionResponse> obs) {
+        try {
+            byte[] body = req.toByteArray();
+            rabbitChannel.basicPublish("", "interaction_requests", MessageProperties.PERSISTENT_BASIC, body);
+            obs.onNext(InteractionResponse.newBuilder().build());  // immediate ack
+            obs.onCompleted();
+            } catch (Exception e) {
+            obs.onError(e);
         }
-        Document doc = new Document("userId",  userId)
-            .append("payload",     payload)
-            .append("receivedAt",  receivedAt.getSeconds())
-            .append("annotations", annDocs);
-        coll.createIndex(new Document("userId", 1));
-        // --------------------------------
-        // Return the annotated response
-        respObserver.onNext(response);
-        respObserver.onCompleted();
     }
 }
