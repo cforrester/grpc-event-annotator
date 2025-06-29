@@ -11,6 +11,8 @@ A Java-based gRPC microservice for ingesting and annotating user interactions. B
 * **Dockerized**: Multi-stage Dockerfile produces a lightweight, runnable container.
 * **Compose Support**: Docker Compose configuration to launch the service and MongoDB together.
 * **JUnit Tests**: Integration tests using Testcontainers for MongoDB.
+* Bidirectional streaming for live annotate/chat
+* Asynchronous ingestion via RabbitMQ
 
 ## Prerequisites
 
