@@ -1,91 +1,111 @@
+## Project Overview
 
-# grpc-event-annotator
+This microservice ingests user interactions via gRPC, publishes them to RabbitMQ, processes them asynchronously in a separate “annotator” service (adds metadata and persists to MongoDB), and supports mutual TLS (mTLS) for secure communication.
 
-A Java-based gRPC microservice for ingesting and annotating user interactions. Built with gRPC, Protocol Buffers, and MongoDB, and containerized via Docker.
-
-## Features
-
-* **Unary RPC**: Annotate a single interaction per call.
-* **Client-Streaming RPC**: Batch multiple interactions in a single stream and receive annotations in one response.
-* **Persistence**: Stores raw interactions and annotations in MongoDB.
-* **Dockerized**: Multi-stage Dockerfile produces a lightweight, runnable container.
-* **Compose Support**: Docker Compose configuration to launch the service and MongoDB together.
-* **JUnit Tests**: Integration tests using Testcontainers for MongoDB.
-* Bidirectional streaming for live annotate/chat
-* Asynchronous ingestion via RabbitMQ
+**Components:**
+- **gRPC Server** (`service.GrpcServer`):  
+  - Exposes `AnnotateInteraction` RPC  
+  - Publishes raw `InteractionRequest` messages to RabbitMQ  
+- **Annotator Service** (`service.AsyncAnnotator`):  
+  - Consumes from `interaction_requests` queue  
+  - Enriches each message with annotations (e.g. payload length, timestamp)  
+  - Persists enriched documents to MongoDB (`events_db.interactions`)  
+  - Publishes annotated responses to `interaction_responses` (optional)  
+- **MongoDB**: Stores annotated interactions  
+- **RabbitMQ**: Message broker between gRPC server and annotator  
+- **mTLS**: TLS for server+client, enforcing client certificates signed by your CA  
 
 ## Prerequisites
 
-* Java 11+
-* Maven 3.6+
-* Docker & Docker Compose (for containerized deployment)
+- Java 11 SDK  
+- Maven 3.x  
+- Docker & Docker Compose  
+- `openssl` (for cert generation)
 
-## Getting Started
+## TLS Certificate Setup
 
-### Clone the repository
+> **Do not** commit private keys to Git. Add `certs/*.key` to `.gitignore`.
 
-```bash
-git clone https://github.com/cforrester/grpc-event-annotator.git
-cd grpc-event-annotator
-```
-
-### Build the project
-
-```bash
-mvn clean package
-```
-
-### Run locally (without Docker)
-
-1. Start MongoDB on localhost:27017.
-2. Run the server:
-
+1. **Create a `certs/` folder** at the project root.  
+2. **Generate a self-signed CA**:
    ```bash
-   java -cp target/grpc-event-annotator-0.1.0-SNAPSHOT.jar service.GrpcServer
+   cd certs
+   openssl genrsa -out ca.key 4096
+   openssl req -x509 -new -nodes \
+     -key ca.key -days 3650 \
+     -subj "/CN=Example CA" \
+     -out ca.crt
    ```
-3. In another terminal, run the client:
+3. **Server certificate**:
+   ```bash
+   openssl genrsa -out server.key 4096
+   openssl req -new -key server.key \
+     -subj "/CN=localhost" \
+     -out server.csr
+   openssl x509 -req -in server.csr \
+     -CA ca.crt -CAkey ca.key -CAcreateserial \
+     -days 365 -out server.crt
+   ```
+4. **Client certificate**:
+   ```bash
+   openssl genrsa -out client.key 4096
+   openssl req -new -key client.key \
+     -subj "/CN=grpc-client" \
+     -out client.csr
+   openssl x509 -req -in client.csr \
+     -CA ca.crt -CAkey ca.key -CAcreateserial \
+     -days 365 -out client.crt
+   ```
 
+## Local Build
+
+```bash
+# compile & package the fat JAR
+mvn clean package -DskipTests
+```
+
+## Running with Docker Compose
+
+```bash
+docker-compose down
+docker-compose up --build -d
+```
+
+This brings up:
+- **mongo** (MongoDB on 27017)  
+- **rabbitmq** (AMQP on 5672 + management on 15672)  
+- **grpc-server** (waits for RabbitMQ, then starts with mTLS)  
+- **annotator** (consumes, annotates, and writes to MongoDB)
+
+### Confirm Services
+
+```bash
+docker logs -f grpc-server   
+docker logs -f annotator   
+```
+
+## Exercise the Pipeline
+
+1. **Send a request** via the Java client on your host:
    ```bash
    java -cp target/grpc-event-annotator-0.1.0-SNAPSHOT.jar client.GrpcClient
    ```
+2. **Check MongoDB** for the persisted document:
+   ```bash
+   docker exec -it mongo mongo events_db --quiet \
+     --eval "printjson(db.interactions.find().pretty())"
+   ```
+3. **(Optional) Consume annotated responses**:
+   ```bash
+   docker exec -it rabbitmq rabbitmqadmin get \
+     queue=interaction_responses requeue=false
+   ```
 
-### Run with Docker Compose
-
-```bash
-docker-compose up --build
-```
-
-* MongoDB and gRPC server start automatically.
-* To test client:
-
-  ```bash
-  java -cp target/grpc-event-annotator-0.1.0-SNAPSHOT.jar client.GrpcClient
-  ```
-
-## Testing
-
-Integration tests use Testcontainers:
+## Cleanup
 
 ```bash
-mvn clean test
+docker-compose down -v 
 ```
 
-## Feature Roadmap
+---
 
-* **\[ ] Unary and streaming authentication**: Add mTLS and JWT support.
-* **\[ ] REST/JSON gateway**: Provide HTTP/JSON API via grpc-gateway or Envoy.
-* **\[ ] Metrics & tracing**: Integrate Prometheus and OpenTelemetry.
-* **\[ ] Historical query API**: Expose RPCs to fetch stored interaction history.
-* **\[ ] Bulk re-annotation job**: On-demand batch processing of stored data.
-* **\[ ] Kubernetes deployment**: Helm chart with autoscaling and probes.
-* **\[ ] ML-powered annotations**: Plug in sentiment analysis or image tagging models.
-
-## Contributing
-
-1. Fork the repo.
-2. Create a feature branch.
-3. Submit a pull request.
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
