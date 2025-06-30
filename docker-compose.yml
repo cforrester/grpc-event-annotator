@@ -17,7 +17,7 @@ services:
       - --hostname-strict=false
     environment:
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: ChangeMe!!1
+      KEYCLOAK_ADMIN_PASSWORD: admin
       KEYCLOAK_IMPORT:     /imports/realms.json
     volumes:
       - ./realms.json:/imports/realms.json:ro
