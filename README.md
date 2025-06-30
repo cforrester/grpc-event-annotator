@@ -1,4 +1,7 @@
-## Project Overview
+## 🚧 Under construction 🚧
+This project is a work-in-progress.
+
+## Project Overview  
 
 This microservice ingests user interactions via gRPC, publishes them to RabbitMQ, processes them asynchronously in a separate “annotator” service (adds metadata and persists to MongoDB), and supports mutual TLS (mTLS) for secure communication.
 
