@@ -1,39 +1,46 @@
-version: "3.8"
+
 services:
   mongo:
     image: mongo:5.0.15
-    container_name: mongo
-    ports:
-      - "27017:27017"
+    ports: ["27017:27017"]
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
+    ports: ["5672:5672","15672:15672"]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:20.0.3
+    command:
+      - start-dev
+      - --https-certificate-file=/etc/x509/https/tls.crt
+      - --https-certificate-key-file=/etc/x509/https/tls.key
+      - --hostname-strict=false
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ChangeMe!!1
+      KEYCLOAK_IMPORT:     /imports/realms.json
+    volumes:
+      - ./realms.json:/imports/realms.json:ro
+      - ./certs/server.crt:/etc/x509/https/tls.crt:ro
+      - ./certs/server.key:/etc/x509/https/tls.key:ro
     ports:
-      - "5672:5672"
-      - "15672:15672"
+    - "8443:8443" 
 
   grpc-server:
     build: .
-    container_name: grpc-server
-    depends_on:
-      - mongo
-      - rabbitmq
+    depends_on: [ mongo, rabbitmq, keycloak ]
     environment:
-      MONGO_URI:    "mongodb://mongo:27017"
-      RABBITMQ_URI: "amqp://rabbitmq:5672"
-    ports:
-      - "50051:50051"
-    entrypoint: ["/app/wait-for-it.sh","rabbitmq:5672","-t","60","--","java","-cp","app.jar","service.GrpcServer"]
+      MONGO_URI:       "mongodb://mongo:27017"
+      RABBITMQ_URI:    "amqp://rabbitmq:5672"
+      KEYCLOAK_ISSUER:    "http://keycloak:8080/realms/event-realm"
+      KEYCLOAK_JWKS_URI:  "http://keycloak:8080/realms/event-realm/protocol/openid-connect/certs"
+    ports: ["50051:50051"]
+    entrypoint: ["java","-cp","app.jar","service.GrpcServer"]
 
   annotator:
     build: .
-    container_name: annotator
-    depends_on:
-      - mongo
-      - rabbitmq
+    depends_on: [ mongo, rabbitmq ]
     environment:
       MONGO_URI:    "mongodb://mongo:27017"
       RABBITMQ_URI: "amqp://rabbitmq:5672"
-    # override the default ENTRYPOINT (the server) with the AsyncAnnotator
     entrypoint: ["java","-cp","app.jar","service.AsyncAnnotator"]

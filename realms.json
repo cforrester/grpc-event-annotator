@@ -1,0 +1,25 @@
+[
+  {
+    "id": "master",
+    "realm": "master",
+    "enabled": true,
+    "sslRequired": "NONE"
+  },
+  {
+    "id": "event-realm",
+    "realm": "event-realm",
+    "enabled": true,
+    "sslRequired": "NONE",
+    "clients": [
+      {
+        "clientId": "grpc-client",
+        "enabled": true,
+        "protocol": "openid-connect",
+        "publicClient": false,
+        "secret": "YOUR-CLIENT-SECRET",
+        "redirectUris": ["*"],
+        "serviceAccountsEnabled": true
+      }
+    ]
+  }
+]
