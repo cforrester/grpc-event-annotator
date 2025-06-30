@@ -1,26 +1,37 @@
 package service;
 
+import java.io.File;
+
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.shaded.io.netty.handler.ssl.SslContext;
+import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
 
 public class GrpcServer {
-    public static void main(String[] args) throws Exception {
-        // 1️⃣ Read the URI (set by Docker Compose)
-        String mongoUri = System.getenv().getOrDefault("MONGO_URI",
-            "mongodb://localhost:27017");
-        MongoClient mongoClient = MongoClients.create(mongoUri);
+  public static void main(String[] args) throws Exception {
 
-        // 2️⃣ Pass it into your service impl
-        InteractionServiceImpl svc = new InteractionServiceImpl(mongoClient);
+    String mongoUri = System.getenv("MONGO_URI");
+    MongoClient mongoClient = MongoClients.create(mongoUri);
+    InteractionServiceImpl svc = new InteractionServiceImpl(mongoClient);
 
-        int port = 50051;
-        Server server = ServerBuilder.forPort(port)
-            .addService(svc)
-            .build()
-            .start();
-        System.out.println("Server started on port " + port);
-        server.awaitTermination();
-    }
+    SslContext sslContext = GrpcSslContexts.forServer(
+        new File("certs/server.crt"),
+        new File("certs/server.key"))
+      .trustManager(new File("certs/ca.crt"))
+      .clientAuth(ClientAuth.REQUIRE)
+      .build();
+
+    Server server = NettyServerBuilder.forPort(50051)
+        .sslContext(sslContext)
+        .addService(svc)
+        .build()
+        .start();
+
+    System.out.println("mTLS gRPC server listening on 50051");
+    server.awaitTermination();
+  }
 }

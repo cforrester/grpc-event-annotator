@@ -41,9 +41,13 @@ public class AsyncAnnotator {
           .addAnnotations(ts)
           .build();
       // persist to Mongo
+      
+      long seconds = req.getReceivedAt().getSeconds();
+      // convert to milliseconds
+      Date receivedAtDate = new Date(seconds * 1000L);
       Document doc = new Document("user_id", req.getUserId())
            .append("payload", req.getPayload())
-           .append("received_at", req.getReceivedAt().getSeconds())
+           .append("received_at", receivedAtDate)
            .append("annotations", 
                List.of(
                  new Document("key", length.getKey()).append("value", length.getValue()),

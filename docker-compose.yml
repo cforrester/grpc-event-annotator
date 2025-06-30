@@ -1,17 +1,17 @@
 version: "3.8"
 services:
-
   mongo:
     image: mongo:5.0.15
     container_name: mongo
     ports:
       - "27017:27017"
+
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: rabbitmq
     ports:
-      - "5672:5672"      # AMQP
-      - "15672:15672"    # Management UI
-
+      - "5672:5672"
+      - "15672:15672"
 
   grpc-server:
     build: .
@@ -20,18 +20,20 @@ services:
       - mongo
       - rabbitmq
     environment:
-      # so GrpcServer reads the right URI
-      MONGO_URI: "mongodb://mongo:27017"
-      RABBITMQ_URI: "amqp://rabbitmq:5672"    
+      MONGO_URI:    "mongodb://mongo:27017"
+      RABBITMQ_URI: "amqp://rabbitmq:5672"
     ports:
       - "50051:50051"
-      
+    entrypoint: ["/app/wait-for-it.sh","rabbitmq:5672","-t","60","--","java","-cp","app.jar","service.GrpcServer"]
+
   annotator:
     build: .
+    container_name: annotator
     depends_on:
       - mongo
       - rabbitmq
     environment:
-      MONGO_URI: "mongodb://mongo:27017"
+      MONGO_URI:    "mongodb://mongo:27017"
       RABBITMQ_URI: "amqp://rabbitmq:5672"
-    command: ["java","-cp","app.jar","service.AsyncAnnotator"]
+    # override the default ENTRYPOINT (the server) with the AsyncAnnotator
+    entrypoint: ["java","-cp","app.jar","service.AsyncAnnotator"]
