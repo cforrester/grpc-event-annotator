@@ -60,7 +60,6 @@ This microservice ingests user interactions via gRPC, publishes them to RabbitMQ
 ## Local Build
 
 ```bash
-# compile & package the fat JAR
 mvn clean package -DskipTests
 ```
 
