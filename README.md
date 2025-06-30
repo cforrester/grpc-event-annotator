@@ -73,9 +73,6 @@ This service ingests user interactions via gRPC, publishes them to RabbitMQ, pro
      -days 365 -subj "/CN=localhost"
    ```
 
-## OAuth2 Realm Import (`realms.json`)
-
-
 ## Local Build
 
 ```bash
