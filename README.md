@@ -1,36 +1,42 @@
-## 🚧 Under construction 🚧
-This project is a work-in-progress.
+# gRPC Event Annotator
 
-## Project Overview  
+An asynchronous, secure microservice pipeline using gRPC, RabbitMQ, MongoDB, and OAuth2/mTLS.
 
-This microservice ingests user interactions via gRPC, publishes them to RabbitMQ, processes them asynchronously in a separate “annotator” service (adds metadata and persists to MongoDB), and supports mutual TLS (mTLS) for secure communication.
+## Project Overview
 
-**Components:**
-- **gRPC Server** (`service.GrpcServer`):  
-  - Exposes `AnnotateInteraction` RPC  
-  - Publishes raw `InteractionRequest` messages to RabbitMQ  
-- **Annotator Service** (`service.AsyncAnnotator`):  
-  - Consumes from `interaction_requests` queue  
-  - Enriches each message with annotations (e.g. payload length, timestamp)  
-  - Persists enriched documents to MongoDB (`events_db.interactions`)  
-  - Publishes annotated responses to `interaction_responses` (optional)  
+This service ingests user interactions via gRPC, publishes them to RabbitMQ, processes them asynchronously in a separate “annotator” service (adds metadata and persists to MongoDB), and supports:
+
+- **mTLS** for gRPC server & client  
+- **OAuth2** (Keycloak) with JWT access tokens, refresh tokens, scopes, and third-party IdP  
+- **Asynchronous processing** via RabbitMQ  
+- **Persistence** in MongoDB  
+
+### Components
+
+- **gRPC Server** (`service.GrpcServer`)  
+  - RPC: `AnnotateInteraction(InteractionRequest) → InteractionResponse`  
+  - Publishes raw interactions to RabbitMQ queue `interaction_requests`  
+  - Secured via mTLS and OAuth2 (JWT + scopes)  
+- **Annotator Service** (`service.AsyncAnnotator`)  
+  - Consumes `interaction_requests`, enriches data, writes to MongoDB  
+  - (Optionally) publishes annotated responses to `interaction_responses`  
+- **Keycloak**: Authorization server (OAuth2 + JWT tokens)  
+- **RabbitMQ**: Message broker  
 - **MongoDB**: Stores annotated interactions  
-- **RabbitMQ**: Message broker between gRPC server and annotator  
-- **mTLS**: TLS for server+client, enforcing client certificates signed by your CA  
 
 ## Prerequisites
 
 - Java 11 SDK  
 - Maven 3.x  
 - Docker & Docker Compose  
-- `openssl` (for cert generation)
+- `openssl`, `keytool` (for cert generation on Keycloak & mTLS)
 
 ## TLS Certificate Setup
 
-> **Do not** commit private keys to Git. Add `certs/*.key` to `.gitignore`.
+> **Never** commit private keys. Add `certs/*.key` to `.gitignore`.
 
-1. **Create a `certs/` folder** at the project root.  
-2. **Generate a self-signed CA**:
+1. Create `certs/` at repo root.  
+2. **Generate CA**:
    ```bash
    cd certs
    openssl genrsa -out ca.key 4096
@@ -39,8 +45,9 @@ This microservice ingests user interactions via gRPC, publishes them to RabbitMQ
      -subj "/CN=Example CA" \
      -out ca.crt
    ```
-3. **Server certificate**:
+3. **Service mTLS certs** (for gRPC server & client):
    ```bash
+   # Server
    openssl genrsa -out server.key 4096
    openssl req -new -key server.key \
      -subj "/CN=localhost" \
@@ -48,9 +55,8 @@ This microservice ingests user interactions via gRPC, publishes them to RabbitMQ
    openssl x509 -req -in server.csr \
      -CA ca.crt -CAkey ca.key -CAcreateserial \
      -days 365 -out server.crt
-   ```
-4. **Client certificate**:
-   ```bash
+
+   # Client
    openssl genrsa -out client.key 4096
    openssl req -new -key client.key \
      -subj "/CN=grpc-client" \
@@ -59,6 +65,16 @@ This microservice ingests user interactions via gRPC, publishes them to RabbitMQ
      -CA ca.crt -CAkey ca.key -CAcreateserial \
      -days 365 -out client.crt
    ```
+4. **Keycloak HTTPS cert** (optional):
+   ```bash
+   openssl genrsa -out kc.key 2048
+   openssl req -new -x509 \
+     -key kc.key -out kc.crt \
+     -days 365 -subj "/CN=localhost"
+   ```
+
+## OAuth2 Realm Import (`realms.json`)
+
 
 ## Local Build
 
@@ -66,48 +82,55 @@ This microservice ingests user interactions via gRPC, publishes them to RabbitMQ
 mvn clean package -DskipTests
 ```
 
-## Running with Docker Compose
+## Running Everything
 
 ```bash
-docker-compose down
+docker-compose down -v
 docker-compose up --build -d
 ```
-
-This brings up:
-- **mongo** (MongoDB on 27017)  
-- **rabbitmq** (AMQP on 5672 + management on 15672)  
-- **grpc-server** (waits for RabbitMQ, then starts with mTLS)  
-- **annotator** (consumes, annotates, and writes to MongoDB)
 
 ### Confirm Services
 
 ```bash
-docker logs -f grpc-server   
-docker logs -f annotator   
+docker-compose logs -f mongo
+docker-compose logs -f rabbitmq
+docker-compose logs -f keycloak   # “Listening on: http://0.0.0.0:8080”
+docker-compose logs -f grpc-server
+#   mTLS gRPC server listening on 50051
+docker-compose logs -f annotator
+#   Annotator listening for messages...
 ```
+
+## Access Keycloak
+
+- **URL**: `http://<HOST_IP>:8080/auth`  
+- **Admin**: `admin` / `admin`
 
 ## Exercise the Pipeline
 
-1. **Send a request** via the Java client on your host:
+1. **Obtain JWT** (password grant):
    ```bash
-   java -cp target/grpc-event-annotator-0.1.0-SNAPSHOT.jar client.GrpcClient
+   TOKEN=$(curl -s \
+     -d "grant_type=password" \
+     -d "client_id=grpc-client" \
+     -d "client_secret=<SECRET>" \
+     -d "username=<USER>" \
+     -d "password=<PASS>" \
+     http://localhost:8080/realms/event-realm/protocol/openid-connect/token \
+     | jq -r .access_token)
    ```
-2. **Check MongoDB** for the persisted document:
+2. **Call gRPC** with the token:
+   ```bash
+   java -cp target/grpc-event-annotator-0.1.0-SNAPSHOT.jar client.GrpcClient --token "$TOKEN"
+   ```
+3. **Verify Mongo**:
    ```bash
    docker exec -it mongo mongo events_db --quiet \
      --eval "printjson(db.interactions.find().pretty())"
-   ```
-3. **(Optional) Consume annotated responses**:
-   ```bash
-   docker exec -it rabbitmq rabbitmqadmin get \
-     queue=interaction_responses requeue=false
    ```
 
 ## Cleanup
 
 ```bash
-docker-compose down -v 
+docker-compose down -v
 ```
-
----
-
